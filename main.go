@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Shadran/pagekeeper/database"
+	"github.com/Shadran/pagekeeper/utils"
 
 	"github.com/bwmarrin/discordgo"
 	_ "github.com/mattn/go-sqlite3"
@@ -20,7 +21,8 @@ type config struct {
 }
 
 func main() {
-	conf, err := readConfig("config.json")
+	manager := utils.NewConfigManager("config.json")
+	conf, err := manager.ReadConfig()
 	if err != nil {
 		log.Fatalln("Cannot read config: ", err)
 	}
@@ -47,9 +49,9 @@ func main() {
 		log.Fatalln("Cannot start database: ", err)
 	}
 	pkDb.Initialize()
-	bot := NewPageKeeper(session, pkDb)
+	bot := NewPageKeeper(pkDb)
 
-	bot.Start()
+	bot.Start(session)
 
 	log.Println("Page Keeper is up and running! Press CTRL + C to exit...")
 	sc := make(chan os.Signal, 1)

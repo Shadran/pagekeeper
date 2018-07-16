@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"mime"
@@ -14,66 +13,91 @@ import (
 )
 
 type KeepCommand struct {
-	session *discordgo.Session
-	pkDb    *database.Database
+	pkDb *database.Database
 }
 
-func NewKeepCommand(session *discordgo.Session, pkDb *database.Database) *KeepCommand {
-	return &KeepCommand{session, pkDb}
+func NewKeepCommand(pkDb *database.Database) *KeepCommand {
+	return &KeepCommand{pkDb}
 }
 
 func (c *KeepCommand) Definition() string {
 	return "keep"
 }
 
-func (c *KeepCommand) Execute(channel *discordgo.Channel, message *discordgo.MessageCreate) {
+func (c *KeepCommand) Execute(session *discordgo.Session, channel *discordgo.Channel, message *discordgo.MessageCreate) {
 	if len(message.Attachments) == 0 {
-		c.session.ChannelMessageSend(message.ChannelID, "You need to attach an image to the message you want to keep.")
+		session.ChannelMessageSend(message.ChannelID, "You need to attach an image to the message you want to keep.")
 		return
 	}
 	attachment := message.Attachments[0]
 	if !strings.Contains(mime.TypeByExtension(filepath.Ext(attachment.Filename)), "image") {
-		c.session.ChannelMessageSend(message.ChannelID, "The specified attachment is not an image")
+		session.ChannelMessageSend(message.ChannelID, "The specified attachment is not an image")
 		return
 	}
-	parts := strings.Split(message.Content, " ")
-	if len(parts) < 3 {
-		c.session.ChannelMessageSend(message.ChannelID, "You need to specify a title and a channel for the page.")
+	params := parseParameters(c, message.Content)
+	defaultCh, _ := c.pkDb.Settings.QueryDefault(channel.GuildID)
+	log.Println("Default channel: ", defaultCh)
+	channelParam := func() string {
+		if _, ok := params["channel"]; ok {
+			log.Println("returning parameter")
+			return params["channel"]
+		}
+		log.Println("returning default")
+		return defaultCh
+	}()
+	if channelParam == "" {
+		session.ChannelMessageSend(message.ChannelID, "You need to specify a channel name.")
 		return
 	}
-	chID, err := channelIdFromString(parts[2])
+	chID, err := channelIdFromString(channelParam)
 	if err != nil {
-		c.session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
+		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
 		log.Println(err)
 		return
 	}
-	destChannel, err := c.session.Channel(chID)
+	destChannel, err := session.Channel(chID)
 	if err != nil || destChannel.GuildID != channel.GuildID {
-		c.session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
+		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
 		return
 	}
-	log.Println("Adding image " + parts[1] + " to channel " + destChannel.ID)
-	image, err := c.pkDb.Image.Add(parts[1], attachment.URL, database.MessageData{GuildID: destChannel.GuildID, ChannelID: destChannel.ID})
+	titleParam := func() string {
+		if _, ok := params["title"]; ok {
+			return params["title"]
+		}
+		return strings.TrimSuffix(attachment.Filename, filepath.Ext(attachment.Filename))
+	}()
+
+	log.Println("Adding image " + titleParam + " to channel " + destChannel.ID)
+	image, err := c.pkDb.Image.Add(titleParam, attachment.URL, database.MessageData{GuildID: destChannel.GuildID, ChannelID: destChannel.ID})
 	if image.MessageID != "" {
 		log.Println("Image already found, editing")
-		_, err = c.session.ChannelMessageEdit(destChannel.ID, image.MessageID, image.Title+"\r\n"+attachment.URL)
+		_, err = session.ChannelMessageEdit(destChannel.ID, image.MessageID, image.Title+"\r\n"+attachment.URL)
 		if err != nil {
-			c.session.ChannelMessageSend(message.ChannelID, "Cannot add the new image, please try again.")
+			session.ChannelMessageSend(message.ChannelID, "Cannot add the new image, please try again.")
 			return
 		}
 	} else {
-		m, err := c.session.ChannelMessageSend(destChannel.ID, image.Title+"\r\n"+attachment.URL)
+		m, err := session.ChannelMessageSend(destChannel.ID, image.Title+"\r\n"+attachment.URL)
 		if err != nil {
-			c.session.ChannelMessageSend(message.ChannelID, "Cannot add the new image, please try again.")
+			session.ChannelMessageSend(message.ChannelID, "Cannot add the new image, please try again.")
 			return
 		}
-		c.pkDb.Image.UpdateLocation(image.ID, database.MessageData{GuildID: destChannel.GuildID, ChannelID: destChannel.ID, MessageID: m.ID})
+		err = c.pkDb.Image.UpdateLocation(image.ID, database.MessageData{GuildID: destChannel.GuildID, ChannelID: destChannel.ID, MessageID: m.ID})
+		if err != nil {
+			session.ChannelMessageSend(message.ChannelID, "There was an error while adding the new image.")
+			log.Println("Error updating references to DB: ", err)
+			return
+		}
 	}
-	c.session.ChannelMessageSend(message.ChannelID, "Page added on channel "+parts[2])
+	session.ChannelMessageSend(message.ChannelID, "Page added on channel <#"+destChannel.ID+">")
 }
 
 func (c *KeepCommand) HelpText() string {
 	return ""
+}
+
+func (c *KeepCommand) parameters() []string {
+	return []string{"title", "channel"}
 }
 
 func downloadImage(url string) ([]byte, error) {
@@ -87,12 +111,4 @@ func downloadImage(url string) ([]byte, error) {
 		return nil, err
 	}
 	return b, nil
-}
-
-func channelIdFromString(source string) (string, error) {
-	if len(source) < 2 || len(source) > 23 {
-		return "", fmt.Errorf("Invalid source text length")
-	}
-	id := strings.Trim(source, "<>#")
-	return id, nil
 }

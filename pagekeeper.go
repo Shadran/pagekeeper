@@ -12,26 +12,29 @@ import (
 const prefix string = "pk:"
 
 type PageKeeper struct {
-	session  *discordgo.Session
 	pkDb     *database.Database
 	commands map[string]commands.Command
 }
 
-func NewPageKeeper(session *discordgo.Session, db *database.Database) *PageKeeper {
-	return &PageKeeper{session: session, pkDb: db, commands: map[string]commands.Command{}}
+func NewPageKeeper(db *database.Database) *PageKeeper {
+	return &PageKeeper{pkDb: db, commands: map[string]commands.Command{}}
 }
 
-func (pk *PageKeeper) Start() {
+func (pk *PageKeeper) Start(session *discordgo.Session) {
 	list := []commands.Command{
-		commands.NewKeepCommand(pk.session, pk.pkDb),
-		commands.NewResetCommand(pk.session, pk.pkDb),
+		commands.NewKeepCommand(pk.pkDb),
+		commands.NewResetCommand(pk.pkDb),
+		commands.NewOrderCommand(pk.pkDb),
+		commands.NewDefaultCommand(pk.pkDb),
+		commands.NewRemoveCommand(pk.pkDb),
+		commands.NewCompareCommand(pk.pkDb),
 	}
 
 	for _, c := range list {
 		pk.commands[c.Definition()] = c
 	}
 
-	pk.session.AddHandler(pk.messageCreate)
+	session.AddHandler(pk.messageCreate)
 }
 
 func (pk *PageKeeper) messageCreate(session *discordgo.Session, message *discordgo.MessageCreate) {
@@ -43,5 +46,5 @@ func (pk *PageKeeper) messageCreate(session *discordgo.Session, message *discord
 		return
 	}
 	channel, _ := session.Channel(message.ChannelID)
-	c.Execute(channel, message)
+	c.Execute(session, channel, message)
 }

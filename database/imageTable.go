@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"log"
+	"time"
 )
 
 type ImageTable struct {
@@ -48,14 +49,15 @@ func (t *ImageTable) Add(title string, url string, source MessageData) (*Image, 
 }
 
 func (t *ImageTable) QueryByTitleAndLocation(title string, guildID string, channelID string) (*Image, error) {
-	stmt, err := t.pkDb.Prepare(`SELECT image.id, image.title, image.guildID, image.channelID, image.messageID
-								 FROM image WHERE image.title = ? AND image.guildID = ? AND image.channelID = ?`)
+	stmt, err := t.pkDb.Prepare(`SELECT image.id, image.title, image.guildID, image.channelID, image.messageID, image.insertedTime
+								 FROM image 
+								 WHERE image.title = ? AND image.guildID = ? AND image.channelID = ?`)
 	if err != nil {
 		return nil, err
 	}
 	image := &Image{}
 	log.Println("Searching images with ", title, guildID, channelID)
-	if err := stmt.QueryRow(title, guildID, channelID).Scan(&image.ID, &image.Title, &image.GuildID, &image.ChannelID, &image.MessageID); err != nil {
+	if err := stmt.QueryRow(title, guildID, channelID).Scan(&image.ID, &image.Title, &image.GuildID, &image.ChannelID, &image.MessageID, &image.InsertedTime); err != nil {
 		log.Println("Error while searching ", err)
 		return nil, err
 	}
@@ -66,20 +68,59 @@ func (t *ImageTable) QueryByTitleAndLocation(title string, guildID string, chann
 	return image, nil
 }
 
+func (t *ImageTable) QueryOrdered(guildID string, channelID string) ([]*Image, error) {
+	stmt, err := t.pkDb.Prepare(`SELECT image.id, image.title, image.guildID, image.channelID, image.messageID, image.insertedTime
+								 FROM image 
+								 WHERE image.guildID = ? AND image.channelID = ?
+								 ORDER BY  CAST(title AS INTEGER), image.title`)
+	if err != nil {
+		return nil, err
+	}
+	images := []*Image{}
+	rows, err := stmt.Query(guildID, channelID)
+	for rows.Next() {
+		image := &Image{}
+		err = rows.Scan(&image.ID, &image.Title, &image.GuildID, &image.ChannelID, &image.MessageID, &image.InsertedTime)
+		if err != nil {
+			log.Println("Error while retrieving messages: ", err)
+			return nil, err
+		}
+		image.Versions, err = t.getVersions(image.ID)
+		if err != nil {
+			return nil, err
+		}
+		images = append(images, image)
+	}
+	return images, nil
+}
+
 func (t *ImageTable) UpdateLocation(id int64, source MessageData) error {
 	tx, err := t.pkDb.Begin()
 	if err != nil {
 		return err
 	}
-	stmt, err := t.pkDb.Prepare(`UPDATE image SET guildID = ?, channelID = ?, messageID = ? WHERE id = ?`)
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	_, err = stmt.Exec(source.GuildID, source.ChannelID, source.MessageID, id)
-	if err != nil {
-		tx.Rollback()
-		return err
+	if source.InsertedTime == (time.Time{}) {
+		stmt, err := t.pkDb.Prepare(`UPDATE image SET guildID = ?, channelID = ?, messageID = ? WHERE id = ?`)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		_, err = stmt.Exec(source.GuildID, source.ChannelID, source.MessageID, id)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+	} else {
+		stmt, err := t.pkDb.Prepare(`UPDATE image SET guildID = ?, channelID = ?, messageID = ?, insertedTime = ? WHERE id = ?`)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		_, err = stmt.Exec(source.GuildID, source.ChannelID, source.MessageID, source.InsertedTime, id)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
 	}
 	tx.Commit()
 	return nil
@@ -124,8 +165,28 @@ func (t *ImageTable) ResetAll(guildID string) error {
 	return nil
 }
 
+func (t *ImageTable) RemoveImage(guildID string, channelID string, imageID int64) error {
+	tx, err := t.pkDb.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := t.pkDb.Prepare(`DELETE FROM image WHERE guildID = ? AND channelID = ? AND imageID = ?`)
+	if err != nil {
+		log.Println("Error while removing image: ", err)
+		tx.Rollback()
+		return err
+	}
+	_, err = stmt.Exec(guildID, channelID, imageID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
 func (t *ImageTable) addNewImage(title string, source MessageData, tx *sql.Tx) (*Image, error) {
-	image := &Image{Title: title, MessageData: MessageData{source.GuildID, source.ChannelID, source.MessageID}}
+	image := &Image{Title: title, MessageData: MessageData{source.GuildID, source.ChannelID, source.MessageID, source.InsertedTime}}
 	stmt, err := tx.Prepare("INSERT INTO image (title, guildID, channelID, messageID) VALUES (?, ?, ?, ?)")
 	if err != nil {
 		log.Println("Error while adding new image: ", err)
