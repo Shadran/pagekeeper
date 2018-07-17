@@ -9,17 +9,22 @@ type SettingsTable struct {
 	pkDb *sql.DB
 }
 
-func (t *SettingsTable) UpdateDefault(guildID string, channelID string) error {
+type Settings struct {
+	DefaultChannel string
+	ArchiveChannel string
+}
+
+func (t *SettingsTable) UpdateDefault(guildID string, defaultChannelID string, archiveChannelID string) error {
 	tx, err := t.pkDb.Begin()
 	if err != nil {
 		return err
 	}
-	stmt, err := t.pkDb.Prepare(`INSERT OR REPLACE INTO settings (guildID, defaultChannel) VALUES (?, ?)`)
+	stmt, err := t.pkDb.Prepare(`INSERT OR REPLACE INTO settings (guildID, defaultChannel, archiveChannel) VALUES (?, ?, ?)`)
 	if err != nil {
 		tx.Rollback()
 		return err
 	}
-	_, err = stmt.Exec(guildID, channelID)
+	_, err = stmt.Exec(guildID, defaultChannelID, archiveChannelID)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -28,18 +33,18 @@ func (t *SettingsTable) UpdateDefault(guildID string, channelID string) error {
 	return nil
 }
 
-func (t *SettingsTable) QueryDefault(guildID string) (string, error) {
-	stmt, err := t.pkDb.Prepare(`SELECT defaultChannel
+func (t *SettingsTable) QueryDefault(guildID string) (Settings, error) {
+	stmt, err := t.pkDb.Prepare(`SELECT defaultChannel, archiveChannel
 								 FROM settings 
 								 WHERE guildID = ?`)
 	if err != nil {
-		return "", err
+		return Settings{}, err
 	}
-	result := ""
-	if err := stmt.QueryRow(guildID).Scan(&result); err != nil {
+	result := Settings{}
+	if err := stmt.QueryRow(guildID).Scan(&result.DefaultChannel, &result.ArchiveChannel); err != nil {
 		if err != sql.ErrNoRows {
 			log.Println("Error while searching ", err)
-			return "", err
+			return Settings{}, err
 		}
 	}
 	return result, nil

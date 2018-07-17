@@ -20,14 +20,17 @@ func NewPageKeeper(db *database.Database) *PageKeeper {
 	return &PageKeeper{pkDb: db, commands: map[string]commands.Command{}}
 }
 
-func (pk *PageKeeper) Start(session *discordgo.Session) {
+func (pk *PageKeeper) Start(session *discordgo.Session, parser *commands.ChannelParser) {
+	parser.ReloadAliases()
 	list := []commands.Command{
-		commands.NewKeepCommand(pk.pkDb),
-		commands.NewResetCommand(pk.pkDb),
-		commands.NewOrderCommand(pk.pkDb),
-		commands.NewDefaultCommand(pk.pkDb),
-		commands.NewRemoveCommand(pk.pkDb),
-		commands.NewCompareCommand(pk.pkDb),
+		commands.NewKeepCommand(pk.pkDb, parser),
+		commands.NewResetCommand(pk.pkDb, parser),
+		commands.NewOrderCommand(pk.pkDb, parser),
+		commands.NewDefaultCommand(pk.pkDb, parser),
+		commands.NewRemoveCommand(pk.pkDb, parser),
+		commands.NewCompareCommand(pk.pkDb, parser),
+		commands.NewArchiveCommand(pk.pkDb, parser),
+		commands.NewAliasCommand(pk.pkDb, parser),
 	}
 
 	for _, c := range list {

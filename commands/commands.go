@@ -1,9 +1,11 @@
 package commands
 
 import (
-	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
 
+	"github.com/Shadran/pagekeeper/database"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -15,6 +17,15 @@ type Command interface {
 
 type parametricCommand interface {
 	parameters() []string
+}
+
+type baseCommand struct {
+	pkDb   *database.Database
+	parser *ChannelParser
+}
+
+func newBaseCommand(pkDb *database.Database, parser *ChannelParser) baseCommand {
+	return baseCommand{pkDb, parser}
 }
 
 func parseParameters(c parametricCommand, messageText string) map[string]string {
@@ -29,10 +40,15 @@ func parseParameters(c parametricCommand, messageText string) map[string]string 
 	return result
 }
 
-func channelIdFromString(source string) (string, error) {
-	id := strings.Trim(source, "<>#")
-	if len(id) < 1 || len(id) > 20 {
-		return "", fmt.Errorf("Invalid text length")
+func downloadImage(url string) ([]byte, error) {
+	response, err := http.Get(url)
+	if err != nil {
+		return nil, err
 	}
-	return id, nil
+	defer response.Body.Close()
+	b, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }

@@ -8,11 +8,11 @@ import (
 )
 
 type ResetCommand struct {
-	pkDb *database.Database
+	baseCommand
 }
 
-func NewResetCommand(pkDb *database.Database) *ResetCommand {
-	return &ResetCommand{pkDb}
+func NewResetCommand(pkDb *database.Database, parser *ChannelParser) *ResetCommand {
+	return &ResetCommand{newBaseCommand(pkDb, parser)}
 }
 
 func (c *ResetCommand) Definition() string {
@@ -21,18 +21,7 @@ func (c *ResetCommand) Definition() string {
 
 func (c *ResetCommand) Execute(session *discordgo.Session, channel *discordgo.Channel, message *discordgo.MessageCreate) {
 	params := parseParameters(c, message.Content)
-	defaultCh, _ := c.pkDb.Settings.QueryDefault(channel.GuildID)
-	channelParam := func() string {
-		if _, ok := params["channel"]; ok {
-			return params["channel"]
-		}
-		return defaultCh
-	}()
-	if channelParam == "" {
-		session.ChannelMessageSend(message.ChannelID, "You need to specify a channel name or \"all\" for all channels.")
-		return
-	}
-	if channelParam == "all" {
+	if params["channel"] == "all" {
 		err := c.pkDb.Image.ResetAll(channel.GuildID)
 		if err != nil {
 			session.ChannelMessageSend(message.ChannelID, "Cannot reset all page references. Please try again later.")
@@ -40,9 +29,8 @@ func (c *ResetCommand) Execute(session *discordgo.Session, channel *discordgo.Ch
 			return
 		}
 	} else {
-		chID, err := channelIdFromString(channelParam)
-		destChannel, err := session.Channel(chID)
-		if err != nil || destChannel.GuildID != channel.GuildID {
+		destChannel, err := c.parser.Parse(session, channel.GuildID, params["channel"], true, true)
+		if err != nil || destChannel == nil || destChannel.GuildID != channel.GuildID {
 			session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
 			return
 		}

@@ -1,10 +1,8 @@
 package commands
 
 import (
-	"io/ioutil"
 	"log"
 	"mime"
-	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -13,11 +11,11 @@ import (
 )
 
 type KeepCommand struct {
-	pkDb *database.Database
+	baseCommand
 }
 
-func NewKeepCommand(pkDb *database.Database) *KeepCommand {
-	return &KeepCommand{pkDb}
+func NewKeepCommand(pkDb *database.Database, parser *ChannelParser) *KeepCommand {
+	return &KeepCommand{newBaseCommand(pkDb, parser)}
 }
 
 func (c *KeepCommand) Definition() string {
@@ -35,28 +33,8 @@ func (c *KeepCommand) Execute(session *discordgo.Session, channel *discordgo.Cha
 		return
 	}
 	params := parseParameters(c, message.Content)
-	defaultCh, _ := c.pkDb.Settings.QueryDefault(channel.GuildID)
-	log.Println("Default channel: ", defaultCh)
-	channelParam := func() string {
-		if _, ok := params["channel"]; ok {
-			log.Println("returning parameter")
-			return params["channel"]
-		}
-		log.Println("returning default")
-		return defaultCh
-	}()
-	if channelParam == "" {
-		session.ChannelMessageSend(message.ChannelID, "You need to specify a channel name.")
-		return
-	}
-	chID, err := channelIdFromString(channelParam)
-	if err != nil {
-		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
-		log.Println(err)
-		return
-	}
-	destChannel, err := session.Channel(chID)
-	if err != nil || destChannel.GuildID != channel.GuildID {
+	destChannel, err := c.parser.Parse(session, channel.GuildID, params["channel"], true, true)
+	if err != nil || destChannel == nil || destChannel.GuildID != channel.GuildID {
 		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
 		return
 	}
@@ -75,6 +53,14 @@ func (c *KeepCommand) Execute(session *discordgo.Session, channel *discordgo.Cha
 		if err != nil {
 			session.ChannelMessageSend(message.ChannelID, "Cannot add the new image, please try again.")
 			return
+		}
+		currentDefaults, err := c.pkDb.Settings.QueryDefault(channel.GuildID)
+		if err != nil {
+			log.Println("Error retrieving defaults: ", err)
+			return
+		}
+		if len(image.Versions) > 1 && currentDefaults.ArchiveChannel != "" {
+			session.ChannelMessageSend(currentDefaults.ArchiveChannel, "Previous version of image "+image.Title+" from channel <#"+image.ChannelID+">\r\n"+image.Versions[len(image.Versions)-2].URL)
 		}
 	} else {
 		m, err := session.ChannelMessageSend(destChannel.ID, image.Title+"\r\n"+attachment.URL)
@@ -98,17 +84,4 @@ func (c *KeepCommand) HelpText() string {
 
 func (c *KeepCommand) parameters() []string {
 	return []string{"title", "channel"}
-}
-
-func downloadImage(url string) ([]byte, error) {
-	response, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	b, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
 }

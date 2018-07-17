@@ -7,19 +7,19 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-type DefaultCommand struct {
+type ArchiveCommand struct {
 	baseCommand
 }
 
-func NewDefaultCommand(pkDb *database.Database, parser *ChannelParser) *DefaultCommand {
-	return &DefaultCommand{newBaseCommand(pkDb, parser)}
+func NewArchiveCommand(pkDb *database.Database, parser *ChannelParser) *ArchiveCommand {
+	return &ArchiveCommand{newBaseCommand(pkDb, parser)}
 }
 
-func (c *DefaultCommand) Definition() string {
-	return "default"
+func (c *ArchiveCommand) Definition() string {
+	return "archive"
 }
 
-func (c *DefaultCommand) Execute(session *discordgo.Session, channel *discordgo.Channel, message *discordgo.MessageCreate) {
+func (c *ArchiveCommand) Execute(session *discordgo.Session, channel *discordgo.Channel, message *discordgo.MessageCreate) {
 	params := parseParameters(c, message.Content)
 	currentDefaults, err := c.pkDb.Settings.QueryDefault(channel.GuildID)
 	if err != nil {
@@ -28,7 +28,7 @@ func (c *DefaultCommand) Execute(session *discordgo.Session, channel *discordgo.
 		return
 	}
 	if params["channel"] == "reset" {
-		err := c.pkDb.Settings.UpdateDefault(channel.GuildID, "", currentDefaults.ArchiveChannel)
+		err := c.pkDb.Settings.UpdateDefault(channel.GuildID, currentDefaults.DefaultChannel, "")
 		if err != nil {
 			session.ChannelMessageSend(message.ChannelID, "Cannot update settings, please try again.")
 			log.Println("Error while updating settings: ", err)
@@ -44,19 +44,19 @@ func (c *DefaultCommand) Execute(session *discordgo.Session, channel *discordgo.
 		return
 	}
 
-	err = c.pkDb.Settings.UpdateDefault(destChannel.GuildID, destChannel.ID, currentDefaults.ArchiveChannel)
+	err = c.pkDb.Settings.UpdateDefault(destChannel.GuildID, currentDefaults.DefaultChannel, destChannel.ID)
 	if err != nil {
 		session.ChannelMessageSend(message.ChannelID, "Cannot update settings, please try again.")
 		log.Println("Error while updating settings: ", err)
 		return
 	}
-	session.ChannelMessageSend(message.ChannelID, "Default channel updated successfully.")
+	session.ChannelMessageSend(message.ChannelID, "Archive channel updated successfully.")
 }
 
-func (c *DefaultCommand) HelpText() string {
+func (c *ArchiveCommand) HelpText() string {
 	return ""
 }
 
-func (c *DefaultCommand) parameters() []string {
+func (c *ArchiveCommand) parameters() []string {
 	return []string{"channel"}
 }

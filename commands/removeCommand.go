@@ -9,11 +9,11 @@ import (
 )
 
 type RemoveCommand struct {
-	pkDb *database.Database
+	baseCommand
 }
 
-func NewRemoveCommand(pkDb *database.Database) *RemoveCommand {
-	return &RemoveCommand{pkDb}
+func NewRemoveCommand(pkDb *database.Database, parser *ChannelParser) *RemoveCommand {
+	return &RemoveCommand{newBaseCommand(pkDb, parser)}
 }
 
 func (c *RemoveCommand) Definition() string {
@@ -22,30 +22,8 @@ func (c *RemoveCommand) Definition() string {
 
 func (c *RemoveCommand) Execute(session *discordgo.Session, channel *discordgo.Channel, message *discordgo.MessageCreate) {
 	params := parseParameters(c, message.Content)
-	defaultCh, _ := c.pkDb.Settings.QueryDefault(channel.GuildID)
-	channelParam := func() string {
-		if _, ok := params["channel"]; ok {
-			return params["channel"]
-		} else {
-			return defaultCh
-		}
-	}()
-	if channelParam == "" {
-		session.ChannelMessageSend(message.ChannelID, "You need to specify a channel name.")
-		return
-	}
-	if _, ok := params["title"]; !ok {
-		session.ChannelMessageSend(message.ChannelID, "You need to specify an image title.")
-		return
-	}
-	chID, err := channelIdFromString(channelParam)
-	if err != nil {
-		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
-		log.Println("Error during channel request: ", err)
-		return
-	}
-	destChannel, err := session.Channel(chID)
-	if err != nil || destChannel.GuildID != channel.GuildID {
+	destChannel, err := c.parser.Parse(session, channel.GuildID, params["channel"], true, true)
+	if err != nil || destChannel == nil || destChannel.GuildID != channel.GuildID {
 		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
 		return
 	}

@@ -9,11 +9,11 @@ import (
 )
 
 type OrderCommand struct {
-	pkDb *database.Database
+	baseCommand
 }
 
-func NewOrderCommand(pkDb *database.Database) *OrderCommand {
-	return &OrderCommand{pkDb}
+func NewOrderCommand(pkDb *database.Database, parser *ChannelParser) *OrderCommand {
+	return &OrderCommand{newBaseCommand(pkDb, parser)}
 }
 
 func (c *OrderCommand) Definition() string {
@@ -22,25 +22,8 @@ func (c *OrderCommand) Definition() string {
 
 func (c *OrderCommand) Execute(session *discordgo.Session, channel *discordgo.Channel, message *discordgo.MessageCreate) {
 	params := parseParameters(c, message.Content)
-	defaultCh, _ := c.pkDb.Settings.QueryDefault(channel.GuildID)
-	channelParam := func() string {
-		if _, ok := params["channel"]; ok {
-			return params["channel"]
-		}
-		return defaultCh
-	}()
-	if channelParam == "" {
-		session.ChannelMessageSend(message.ChannelID, "You need to specify a channel name.")
-		return
-	}
-	chID, err := channelIdFromString(channelParam)
-	if err != nil {
-		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
-		log.Println(err)
-		return
-	}
-	destChannel, err := session.Channel(chID)
-	if err != nil || destChannel.GuildID != channel.GuildID {
+	destChannel, err := c.parser.Parse(session, channel.GuildID, params["channel"], true, true)
+	if err != nil || destChannel == nil || destChannel.GuildID != channel.GuildID {
 		session.ChannelMessageSend(message.ChannelID, "Invalid channel ID specified.")
 		return
 	}

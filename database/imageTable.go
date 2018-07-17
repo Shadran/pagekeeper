@@ -170,7 +170,7 @@ func (t *ImageTable) RemoveImage(guildID string, channelID string, imageID int64
 	if err != nil {
 		return err
 	}
-	stmt, err := t.pkDb.Prepare(`DELETE FROM image WHERE guildID = ? AND channelID = ? AND imageID = ?`)
+	stmt, err := t.pkDb.Prepare(`DELETE FROM image WHERE guildID = ? AND channelID = ? AND id = ?`)
 	if err != nil {
 		log.Println("Error while removing image: ", err)
 		tx.Rollback()

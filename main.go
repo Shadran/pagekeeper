@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Shadran/pagekeeper/commands"
 	"github.com/Shadran/pagekeeper/database"
 	"github.com/Shadran/pagekeeper/utils"
 
@@ -49,9 +50,11 @@ func main() {
 		log.Fatalln("Cannot start database: ", err)
 	}
 	pkDb.Initialize()
+	parser := commands.NewChannelParser(pkDb)
+
 	bot := NewPageKeeper(pkDb)
 
-	bot.Start(session)
+	bot.Start(session, parser)
 
 	log.Println("Page Keeper is up and running! Press CTRL + C to exit...")
 	sc := make(chan os.Signal, 1)
